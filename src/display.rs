@@ -12,7 +12,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-use crate::document::Document;
+use crate::{buffer::Buffer, document::Document};
 
 pub fn handle(_: &mut Peekable<impl Iterator<Item = String>>) -> Result<(), Error> {
     let mut source = vec![];
@@ -29,13 +29,15 @@ pub fn handle(_: &mut Peekable<impl Iterator<Item = String>>) -> Result<(), Erro
     file.read_to_end(&mut source)?;
 
     let mut document = Document::new(&source)?;
+    let mut buffer = Buffer::new(&source);
 
     let mut output = stdout();
 
     execute!(
         output,
         EnterAlternateScreen,
-        SetCursorShape(CursorShape::UnderScore)
+        SetCursorShape(CursorShape::UnderScore),
+        &buffer,
     )?;
 
     enable_raw_mode()?;
@@ -47,15 +49,18 @@ pub fn handle(_: &mut Peekable<impl Iterator<Item = String>>) -> Result<(), Erro
 
         document.focus(position);
 
-        execute!(output, &document)?;
+        //execute!(output, &document)?;
+        //execute!(output, &buffer)?;
 
         enable_raw_mode()?;
 
         let event = read()?;
 
-        if let Err(error) = document.handle(event.clone(), &output) {
-            document.caught(error);
-        }
+        buffer.handle(&event);
+
+        //if let Err(error) = document.handle(event.clone(), &output) {
+        //document.caught(error);
+        //}
 
         match event {
             Event::Key(KeyEvent {
@@ -68,7 +73,7 @@ pub fn handle(_: &mut Peekable<impl Iterator<Item = String>>) -> Result<(), Erro
             _ => {}
         };
 
-        queue!(output, &document)?;
+        queue!(output, &buffer)?;
 
         output.flush()?;
     }
@@ -92,4 +97,6 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("Document {0}")]
     Document(#[from] crate::document::Error),
+    #[error("Buffer")]
+    Buffer,
 }
