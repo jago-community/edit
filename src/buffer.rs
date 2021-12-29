@@ -1,3 +1,6 @@
+#[cfg(test)]
+static TEST_DOCUMENT: &'static [u8] = include_bytes!("../edit");
+
 use std::collections::HashSet;
 
 #[derive(Default)]
@@ -16,7 +19,7 @@ impl Buffer {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct Cursor {
     position: usize,
     y: usize,
@@ -24,7 +27,7 @@ pub struct Cursor {
 }
 
 impl Buffer {
-    fn move_forward_bytes(&mut self, count: usize) -> Option<usize> {
+    fn step_forward_bytes(&mut self, count: usize) -> Option<usize> {
         let next = self.cursor.position.checked_add(count)?;
 
         if next >= self.bytes.len() {
@@ -49,79 +52,56 @@ impl Buffer {
     }
 }
 
+#[test]
+fn test_step_backward_bytes() {
+    let points = vec![
+        Cursor {
+            position: 10,
+            x: 2,
+            y: 2,
+        },
+        Cursor {
+            position: 9,
+            x: 1,
+            y: 2,
+        },
+        Cursor {
+            position: 8,
+            x: 1,
+            y: 2,
+        },
+        Cursor {
+            position: 7,
+            x: 0,
+            y: 1,
+        },
+        Cursor {
+            position: 6,
+            x: 6,
+            y: 0,
+        },
+        Cursor {
+            position: 5,
+            x: 5,
+            y: 0,
+        },
+    ];
+
+    let mut buffer = Buffer {
+        bytes: TEST_DOCUMENT.into(),
+        cursor: points.get(0).unwrap().clone(),
+        ..Default::default()
+    };
+
+    for point in &points[1..] {
+        buffer.step_backward_bytes(1);
+        assert_eq!(&buffer.cursor, point);
+    }
+}
+
 impl Buffer {
-    fn move_backward_bytes(&mut self, count: usize) -> Option<usize> {
-        let mut saw = 0;
-
-        while let Some(position) = self.cursor.position.checked_sub(count) {
-            dbg!(self.bytes.get(position).map(|c| *c as char));
-            if self.bytes.get(position) == Some(&b'\n') {
-                self.new_lines.insert(position);
-                self.cursor.y -= 1;
-
-                let mut steps_from_previous_line = 0;
-
-                for index in (1..position).rev() {
-                    if self.bytes.get(index) == Some(&b'\n') {
-                        break;
-                    } else {
-                        steps_from_previous_line += 1;
-                    }
-                }
-
-                dbg!(steps_from_previous_line);
-
-                self.cursor.x = steps_from_previous_line;
-            } else {
-                dbg!(&self.cursor);
-                self.cursor.x -= 1;
-            }
-
-            saw += 1;
-
-            self.cursor.position = position;
-
-            if saw == count {
-                break;
-            }
-        }
-
-        Some(count)
-
-        /*
-        let next = self.cursor.position.checked_sub(count)?;
-
-        for position in (next..=self.cursor.position).rev() {
-            if self.bytes.get(position) == Some(&b'\n') {
-                self.new_lines.insert(position);
-                self.cursor.y = self.cursor.y.checked_sub(1)?;
-
-                let mut steps_from_previous_line = 0;
-
-                for index in (1..position).rev() {
-                    if self.bytes.get(index) == Some(&b'\n') {
-                        break;
-                    } else {
-                        steps_from_previous_line += 1;
-                    }
-                }
-
-                dbg!(steps_from_previous_line);
-
-                self.cursor.x = steps_from_previous_line;
-            } else {
-                self.cursor.x = self.cursor.x.checked_sub(1)?;
-            }
-
-            self.cursor.position = position;
-        }
-
-        let count = self.cursor.position - next;
-        */
-
-        //self.cursor.position = next;
-
-        //Some(count)
+    fn step_backward_bytes(&mut self, count: usize) -> Option<usize> {
+        unimplemented!()
     }
 }
 
@@ -136,7 +116,7 @@ impl Buffer {
                 saw += 1;
             }
 
-            self.move_forward_bytes(1)?;
+            self.step_forward_bytes(1)?;
 
             if saw == count {
                 break;
@@ -153,44 +133,45 @@ impl Buffer {
         Some(count)
     }
 
-    fn move_backward_lines(&mut self, count: usize) -> Option<usize> {
-        let mut saw = 0;
+    //fn move_backward_lines(&mut self, count: usize) -> Option<usize> {
+    //let mut saw = 0;
 
-        for _ in 0..self.cursor.position {
-            self.move_backward_bytes(1)?;
+    //for _ in 0..self.cursor.position {
+    //self.move_backward_bytes(1)?;
 
-            if self.new_lines.contains(&self.cursor.position) {
-                saw += 1;
-            }
+    //if self.new_lines.contains(&self.cursor.position) {
+    //saw += 1;
+    //}
 
-            if saw == count {
-                break;
-            }
-        }
+    //if saw == count {
+    //break;
+    //}
+    //}
 
-        //self.move_backward_bytes(dbg!(&self.cursor).x)?;
+    //self.move_backward_bytes(dbg!(&self.cursor).x)?;
 
-        //let mut line_length = 0;
+    //let mut line_length = 0;
 
-        //for _ in 0..self.cursor.position {
-        //self.move_backward_bytes(1)?;
-        //line_length += 1;
+    //for _ in 0..self.cursor.position {
+    //self.move_backward_bytes(1)?;
+    //line_length += 1;
 
-        //if self.new_lines.contains(&self.cursor.position) {
-        //break;
-        //}
-        //}
+    //if self.new_lines.contains(&self.cursor.position) {
+    //break;
+    //}
+    //}
 
-        //dbg!((want_x, line_length));
+    //dbg!((want_x, line_length));
 
-        //let diff = std::cmp::min(want_x, line_length);
+    //let diff = std::cmp::min(want_x, line_length);
 
-        //self.move_forward_bytes(diff)?;
+    //self.move_forward_bytes(diff)?;
 
-        Some(count)
-    }
+    //Some(count)
+    //}
 }
 
+/*
 #[test]
 fn test_move_some_bytes() {
     let input = b"# Jago
@@ -199,7 +180,7 @@ fn test_move_some_bytes() {
 
 ## Intro
 
-The name Alec Thompson is one that most of us know for one reason or another. The same face might come to mind for each of us. 
+The name Alec Thompson is one that most of us know for one reason or another. The same face might come to mind for each of us.
 
 ## Canker
 
@@ -370,7 +351,7 @@ Canker was founded by one of the Alec Thompsons.
         assert_eq!("# Ja".len() - 1, buffer.cursor.x);
         assert_eq!(0, buffer.cursor.y);
         */
-}
+}*/
 
 use crossterm::{
     cursor::{MoveTo, MoveToColumn},
@@ -387,13 +368,13 @@ impl Buffer {
                 code: KeyCode::Char('l'),
                 ..
             }) => {
-                self.move_forward_bytes(1);
+                self.step_forward_bytes(1);
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Char('h'),
                 ..
             }) => {
-                self.move_backward_bytes(1);
+                self.step_backward_bytes(1);
             }
             _ => {}
         };
