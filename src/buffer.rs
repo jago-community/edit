@@ -47,8 +47,48 @@ impl Buffer {
 
         Some(count)
     }
+}
 
+impl Buffer {
     fn move_backward_bytes(&mut self, count: usize) -> Option<usize> {
+        let mut saw = 0;
+
+        while let Some(position) = self.cursor.position.checked_sub(count) {
+            dbg!(self.bytes.get(position).map(|c| *c as char));
+            if self.bytes.get(position) == Some(&b'\n') {
+                self.new_lines.insert(position);
+                self.cursor.y -= 1;
+
+                let mut steps_from_previous_line = 0;
+
+                for index in (1..position).rev() {
+                    if self.bytes.get(index) == Some(&b'\n') {
+                        break;
+                    } else {
+                        steps_from_previous_line += 1;
+                    }
+                }
+
+                dbg!(steps_from_previous_line);
+
+                self.cursor.x = steps_from_previous_line;
+            } else {
+                dbg!(&self.cursor);
+                self.cursor.x -= 1;
+            }
+
+            saw += 1;
+
+            self.cursor.position = position;
+
+            if saw == count {
+                break;
+            }
+        }
+
+        Some(count)
+
+        /*
         let next = self.cursor.position.checked_sub(count)?;
 
         for position in (next..=self.cursor.position).rev() {
@@ -56,29 +96,36 @@ impl Buffer {
                 self.new_lines.insert(position);
                 self.cursor.y = self.cursor.y.checked_sub(1)?;
 
-                let mut steps_from_previous = 1;
+                let mut steps_from_previous_line = 0;
 
                 for index in (1..position).rev() {
                     if self.bytes.get(index) == Some(&b'\n') {
                         break;
                     } else {
-                        steps_from_previous += 1;
+                        steps_from_previous_line += 1;
                     }
                 }
 
-                self.cursor.x = steps_from_previous;
+                dbg!(steps_from_previous_line);
+
+                self.cursor.x = steps_from_previous_line;
             } else {
                 self.cursor.x = self.cursor.x.checked_sub(1)?;
             }
+
+            self.cursor.position = position;
         }
 
         let count = self.cursor.position - next;
+        */
 
-        self.cursor.position = next;
+        //self.cursor.position = next;
 
-        Some(count)
+        //Some(count)
     }
+}
 
+impl Buffer {
     fn move_forward_lines(&mut self, count: usize) -> Option<usize> {
         let mut saw = 0;
 
@@ -167,7 +214,7 @@ Canker was founded by one of the Alec Thompsons.
     assert_eq!(0, buffer.cursor.x);
     assert_eq!(0, buffer.cursor.y);
 
-    for index in 1.."# Jago".len() {
+    for index in 1..="# Jago".len() {
         buffer.move_forward_bytes(1);
         assert_eq!(index, buffer.cursor.position);
         assert_eq!(index, buffer.cursor.x);
@@ -186,10 +233,10 @@ Canker was founded by one of the Alec Thompsons.
     assert_eq!(1, buffer.cursor.y);
 
     buffer.move_backward_bytes(1);
-    assert_eq!("# Jago".len() - 1, buffer.cursor.position);
-    assert_eq!("# Jago".len() - 1, buffer.cursor.x);
+    assert_eq!("# Jago".len(), buffer.cursor.position);
+    assert_eq!("# Jago".len(), buffer.cursor.x);
     assert_eq!(0, buffer.cursor.y);
-
+    dbg!(&buffer.cursor);
     buffer.move_backward_bytes(1);
     assert_eq!("# Jag".len() - 1, buffer.cursor.position);
     assert_eq!("# Jag".len() - 1, buffer.cursor.x);
