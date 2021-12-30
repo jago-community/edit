@@ -17,6 +17,14 @@ impl Buffer {
             ..Default::default()
         }
     }
+
+    pub fn get_char(&self, at: usize) -> Option<char> {
+        self.bytes.get(at).map(|byte| *byte as char)
+    }
+
+    pub fn current_char(&self) -> Option<char> {
+        self.get_char(self.cursor.position)
+    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -24,6 +32,60 @@ pub struct Cursor {
     position: usize,
     y: usize,
     x: usize,
+}
+
+#[test]
+fn test_step_forward_bytes() {
+    let points = vec![
+        Cursor {
+            position: 4,
+            x: 4,
+            y: 0,
+        },
+        Cursor {
+            position: 5,
+            x: 5,
+            y: 0,
+        },
+        Cursor {
+            position: 6,
+            x: 6,
+            y: 0,
+        },
+        Cursor {
+            position: 7,
+            x: 0,
+            y: 1,
+        },
+        Cursor {
+            position: 8,
+            x: 0,
+            y: 2,
+        },
+        Cursor {
+            position: 9,
+            x: 1,
+            y: 2,
+        },
+    ];
+
+    let mut buffer = Buffer {
+        bytes: TEST_DOCUMENT.into(),
+        cursor: points.get(0).unwrap().clone(),
+        ..Default::default()
+    };
+
+    for point in &points[1..] {
+        buffer.step_forward_bytes(1);
+        println!(
+            "{:?} {:?} = {:?} {:?}",
+            buffer.cursor,
+            buffer.get_char(buffer.cursor.position),
+            point,
+            buffer.get_char(point.position)
+        );
+        assert_eq!(&buffer.cursor, point);
+    }
 }
 
 impl Buffer {
@@ -67,7 +129,7 @@ fn test_step_backward_bytes() {
         },
         Cursor {
             position: 8,
-            x: 1,
+            x: 0,
             y: 2,
         },
         Cursor {
@@ -95,13 +157,52 @@ fn test_step_backward_bytes() {
 
     for point in &points[1..] {
         buffer.step_backward_bytes(1);
+        println!("{:?} = {:?}", buffer.cursor, point);
         assert_eq!(&buffer.cursor, point);
     }
 }
 
 impl Buffer {
     fn step_backward_bytes(&mut self, count: usize) -> Option<usize> {
-        unimplemented!()
+        let mut saw = 0;
+
+        for _ in 0..self.cursor.position {
+            let next = self.cursor.position.checked_sub(1)?;
+
+            saw += 1;
+
+            if self.bytes.get(next) == Some(&b'\n') {
+                self.new_lines.insert(next);
+                self.cursor.y = self.cursor.y.checked_sub(1)?;
+
+                let mut nth_from_last_line = 0;
+
+                for _ in 0..=next {
+                    nth_from_last_line += 1;
+
+                    let previous = match next.checked_sub(1) {
+                        Some(c) => c,
+                        None => break,
+                    };
+
+                    if self.bytes.get(previous) == Some(&b'\n') {
+                        break;
+                    }
+                }
+
+                self.cursor.x = nth_from_last_line - 1;
+            } else {
+                self.cursor.x = self.cursor.x.checked_sub(1)?;
+            }
+
+            self.cursor.position = next;
+
+            if saw == count {
+                break;
+            }
+        }
+
+        Some(self.cursor.position)
     }
 }
 
