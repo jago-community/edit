@@ -25,6 +25,13 @@ impl Buffer {
     pub fn current_char(&self) -> Option<char> {
         self.get_char(self.cursor.position)
     }
+
+    pub fn check_current_byte(&self, want: u8) -> bool {
+        self.bytes
+            .get(self.cursor.position)
+            .map(|byte| *byte == want)
+            .unwrap_or(false)
+    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -78,7 +85,7 @@ fn test_step_forward_bytes() {
     for point in &points[1..] {
         buffer.step_forward_bytes(1);
         println!(
-            "{:?} {:?} = {:?} {:?}",
+            "got {:?} {:?} = want {:?} {:?}",
             buffer.cursor,
             buffer.get_char(buffer.cursor.position),
             point,
@@ -96,7 +103,7 @@ impl Buffer {
             return None;
         }
 
-        for position in self.cursor.position + 1..=next {
+        for position in self.cursor.position..next {
             if self.bytes.get(position) == Some(&b'\n') {
                 self.new_lines.insert(position);
                 self.cursor.y += 1;
@@ -206,23 +213,80 @@ impl Buffer {
     }
 }
 
+#[test]
+fn test_step_forward_lines() {
+    let points = vec![
+        Cursor {
+            position: "# J".len(),
+            x: 2,
+            y: 0,
+        },
+        Cursor {
+            position: "# Jago
+"
+            .len()
+                - 1,
+            x: 0,
+            y: 1,
+        },
+        Cursor {
+            position: "# Jago
+
+"
+            .len(),
+            x: 0,
+            y: 2,
+        },
+    ];
+
+    let mut buffer = Buffer {
+        bytes: TEST_DOCUMENT.into(),
+        cursor: points.get(0).unwrap().clone(),
+        ..Default::default()
+    };
+
+    for point in &points[1..] {
+        buffer.step_forward_lines(1);
+        println!("got {:?} = want {:?}", buffer.cursor, point);
+        assert_eq!(&buffer.cursor, point);
+    }
+}
+
 impl Buffer {
-    fn move_forward_lines(&mut self, count: usize) -> Option<usize> {
+    fn step_forward_lines(&mut self, count: usize) -> Option<usize> {
         let mut saw = 0;
 
-        let dx = self.cursor.x;
+        for _ in self.cursor.position..self.bytes.len() {
+            self.step_forward_bytes(1)?;
 
-        for _ in self.cursor.position..self.bytes.len() - 1 {
-            if self.new_lines.contains(&self.cursor.position) {
+            if self.check_current_byte(b'\n') {
                 saw += 1;
             }
-
-            self.step_forward_bytes(1)?;
 
             if saw == count {
                 break;
             }
         }
+
+        // self.step_forward_bytes(1)?;
+
+        Some(count)
+
+        // let mut saw = 0;
+
+        // let dx = self.cursor.x;
+
+        // for _ in self.cursor.position..self.bytes.len() - 1 {
+        // if self.new_lines.contains(&self.cursor.position) {
+        // saw += 1;
+        // }
+
+        // self.step_forward_bytes(1)?;
+
+        // if saw == count {
+        // break;
+        // }
+        // }
 
         //for _ in 0..dx {
         //if self.new_lines.contains(&self.cursor.position) {
@@ -231,7 +295,7 @@ impl Buffer {
         //self.move_forward_bytes(1)?;
         //}
 
-        Some(count)
+        //Some(count)
     }
 
     //fn move_backward_lines(&mut self, count: usize) -> Option<usize> {
