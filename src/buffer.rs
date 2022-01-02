@@ -10,6 +10,13 @@ pub struct Buffer {
     cursor: Cursor,
 }
 
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct Cursor {
+    position: usize,
+    y: usize,
+    x: usize,
+}
+
 impl Buffer {
     pub fn new(bytes: &[u8]) -> Self {
         Self {
@@ -34,43 +41,75 @@ impl Buffer {
     }
 }
 
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct Cursor {
-    position: usize,
-    y: usize,
-    x: usize,
+#[test]
+fn test_get_mapped_char() {
+    let mut buffer = Buffer::new(TEST_DOCUMENT);
+    for _ in 0.."# Jago".len() {
+        //let this = buffer.get_char(index).unwrap();
+        buffer.step_forward_bytes(1).unwrap();
+        assert_eq!(
+            Some((false, TEST_DOCUMENT[buffer.cursor.position - 1] as char)),
+            buffer.get_mapped_char(buffer.cursor.position - 1)
+        );
+    }
+
+    assert_eq!(
+        Some((true, TEST_DOCUMENT[buffer.cursor.position] as char)),
+        buffer.get_mapped_char(buffer.cursor.position)
+    );
+}
+
+impl Buffer {
+    pub fn get_mapped_char(&self, position: usize) -> Option<(bool, char)> {
+        self.get_char(position).and_then(|this| {
+            if this == '\n' {
+                self.get_char(self.cursor.position + 1)
+                    .map(|that| (true, that))
+            } else {
+                Some((false, this))
+            }
+        })
+    }
 }
 
 #[test]
 fn test_step_forward_bytes() {
     let points = vec![
         Cursor {
-            position: 4,
+            position: "# Ja".len(),
             x: 4,
             y: 0,
         },
         Cursor {
-            position: 5,
+            position: "# Jag".len(),
             x: 5,
             y: 0,
         },
         Cursor {
-            position: 6,
+            position: "# Jago".len(),
             x: 6,
             y: 0,
         },
         Cursor {
-            position: 7,
+            position: "# Jago
+"
+            .len(),
             x: 0,
             y: 1,
         },
         Cursor {
-            position: 8,
+            position: "# Jago
+
+"
+            .len(),
             x: 0,
             y: 2,
         },
         Cursor {
-            position: 9,
+            position: "# Jago
+
+>"
+            .len(),
             x: 1,
             y: 2,
         },
@@ -116,6 +155,8 @@ impl Buffer {
         let count = next - self.cursor.position;
 
         self.cursor.position = next;
+
+        println!("{} {:?}", next, self.get_char(next));
 
         Some(count)
     }
@@ -214,6 +255,7 @@ impl Buffer {
 }
 
 #[test]
+#[ignore]
 fn test_step_forward_lines() {
     let points = vec![
         Cursor {
@@ -226,8 +268,8 @@ fn test_step_forward_lines() {
 "
             .len()
                 - 1,
-            x: 0,
-            y: 1,
+            x: 6,
+            y: 0,
         },
         Cursor {
             position: "# Jago
@@ -268,7 +310,7 @@ impl Buffer {
             }
         }
 
-        // self.step_forward_bytes(1)?;
+        //self.step_forward_bytes(1)?;
 
         Some(count)
 
@@ -297,43 +339,14 @@ impl Buffer {
 
         //Some(count)
     }
+}
 
-    //fn move_backward_lines(&mut self, count: usize) -> Option<usize> {
-    //let mut saw = 0;
+impl Buffer {
+    fn step_backward_lines(&mut self, count: usize) -> Option<usize> {
+        //
 
-    //for _ in 0..self.cursor.position {
-    //self.move_backward_bytes(1)?;
-
-    //if self.new_lines.contains(&self.cursor.position) {
-    //saw += 1;
-    //}
-
-    //if saw == count {
-    //break;
-    //}
-    //}
-
-    //self.move_backward_bytes(dbg!(&self.cursor).x)?;
-
-    //let mut line_length = 0;
-
-    //for _ in 0..self.cursor.position {
-    //self.move_backward_bytes(1)?;
-    //line_length += 1;
-
-    //if self.new_lines.contains(&self.cursor.position) {
-    //break;
-    //}
-    //}
-
-    //dbg!((want_x, line_length));
-
-    //let diff = std::cmp::min(want_x, line_length);
-
-    //self.move_forward_bytes(diff)?;
-
-    //Some(count)
-    //}
+        Some(count)
+    }
 }
 
 /*
@@ -530,16 +543,28 @@ impl Buffer {
     pub fn handle(&mut self, event: &Event) {
         match &event {
             Event::Key(KeyEvent {
-                code: KeyCode::Char('l'),
-                ..
-            }) => {
-                self.step_forward_bytes(1);
-            }
-            Event::Key(KeyEvent {
                 code: KeyCode::Char('h'),
                 ..
             }) => {
                 self.step_backward_bytes(1);
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('j'),
+                ..
+            }) => {
+                self.step_forward_lines(1);
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('k'),
+                ..
+            }) => {
+                self.step_backward_lines(1);
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('l'),
+                ..
+            }) => {
+                self.step_forward_bytes(1);
             }
             _ => {}
         };
@@ -554,6 +579,7 @@ impl Command for Buffer {
         MoveTo(0, 0).write_ansi(out)?;
 
         let (mut x, mut y) = (0, 0);
+        let (mut dx, mut dy) = (self.cursor.x, self.cursor.y);
 
         for (index, grapheme) in
             unsafe { std::str::from_utf8_unchecked(&self.bytes) }.grapheme_indices(true)
@@ -574,7 +600,13 @@ impl Command for Buffer {
             if grapheme == "\n" {
                 x = 0;
                 y += 1;
+
                 MoveToColumn(0).write_ansi(out)?;
+
+                if focus {
+                    dx = 0;
+                    dy += 1;
+                }
             } else {
                 x += grapheme.len();
             }
@@ -583,15 +615,17 @@ impl Command for Buffer {
         MoveTo(0, (y + 1) as u16).write_ansi(out)?;
         SetForegroundColor(Color::Green).write_ansi(out)?;
         Print(format!(
-            "{:?} {} ({}, {})\n\n",
+            "{:?} {} ({}, {}) -> ({}, {})\n\n",
             self.bytes[self.cursor.position] as char,
             self.cursor.position,
             self.cursor.x,
-            self.cursor.y
+            self.cursor.y,
+            dx,
+            dy,
         ))
         .write_ansi(out)?;
         SetForegroundColor(Color::Blue).write_ansi(out)?;
-        MoveTo(self.cursor.x as u16, self.cursor.y as u16).write_ansi(out)?;
+        MoveTo(dx as u16, dy as u16).write_ansi(out)?;
 
         Ok(())
     }
