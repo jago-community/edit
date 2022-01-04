@@ -8,7 +8,9 @@ pub struct Document<'a> {
 
 pub enum Lense {
     Graphemes,
+    Words,
     Sentences,
+    Lines,
 }
 
 impl Default for Lense {
@@ -57,15 +59,17 @@ impl<'a> Command for Document<'a> {
 
         let buffer = unsafe { std::str::from_utf8_unchecked(&self.buffer) };
 
-        let tokens: Box<dyn Iterator<Item = (usize, &str)>> = match self.lense {
-            Lense::Graphemes => Box::new(UnicodeSegmentation::grapheme_indices(buffer, true)),
-            Lense::Sentences => Box::new(UnicodeSegmentation::split_sentence_bound_indices(buffer)),
+        let tokens: Box<dyn Iterator<Item = &str>> = match self.lense {
+            Lense::Graphemes => Box::new(UnicodeSegmentation::graphemes(buffer, true)),
+            Lense::Words => Box::new(UnicodeSegmentation::split_word_bounds(buffer)),
+            Lense::Sentences => Box::new(UnicodeSegmentation::split_sentence_bounds(buffer)),
+            Lense::Lines => Box::new(buffer.lines()),
         };
 
         let mut color_picker = ColorPicker::new();
 
         tokens
-            .map(|(_, token)| {
+            .map(|token| {
                 SetForegroundColor(color_picker.pick()).write_ansi(out)?;
                 Print(token).write_ansi(out)?;
 
@@ -77,6 +81,14 @@ impl<'a> Command for Document<'a> {
             })
             .find(|result: &Result<(), std::fmt::Error>| result.is_err())
             .unwrap_or(Ok(()))?;
+
+        SetForegroundColor(color_picker.pick()).write_ansi(out)?;
+        MoveToColumn(0).write_ansi(out)?;
+        Print(format!(
+            "\n{:?} {} {:?}",
+            self.buffer[self.position] as char, self.position, self.point
+        ))
+        .write_ansi(out)?;
 
         MoveTo(self.point.0 as u16, self.point.1 as u16).write_ansi(out)?;
 
@@ -123,21 +135,35 @@ impl<'a> Document<'a> {
                 code: KeyCode::Char('h'),
                 modifiers: _,
             }) => {
-                self.step_backward().unwrap();
+                self.step_backward(Lense::Graphemes).unwrap();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('j'),
+                modifiers: _,
+            }) => {
+                self.step_forward(Lense::Lines).unwrap();
+            }
+            Event::Key(KeyEvent {
+                code: KeyCode::Char('k'),
+                modifiers: _,
+            }) => {
+                self.step_forward(Lense::Lines).unwrap();
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Char('l'),
                 modifiers: _,
             }) => {
-                self.step_forward().unwrap();
+                self.step_forward(Lense::Graphemes).unwrap();
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Char('n'),
                 modifiers: KeyModifiers::CONTROL,
             }) => {
                 self.lense = match self.lense {
-                    Lense::Graphemes => Lense::Sentences,
-                    Lense::Sentences => Lense::Graphemes,
+                    Lense::Graphemes => Lense::Words,
+                    Lense::Words => Lense::Sentences,
+                    Lense::Sentences => Lense::Lines,
+                    Lense::Lines => Lense::Graphemes,
                 };
             }
             _ => {}
@@ -148,8 +174,8 @@ impl<'a> Document<'a> {
         self.point = point;
     }
 
-    fn step_forward(&mut self) -> Result<(), Error> {
-        let buffer = &self.buffer[self.position..];
+    fn step_forward(&mut self, lense: Lense) -> Result<(), Error> {
+        let buffer = &self.buffer[self.position + 1..];
 
         if buffer.len() == 0 {
             return Ok(());
@@ -157,25 +183,35 @@ impl<'a> Document<'a> {
 
         let buffer = unsafe { std::str::from_utf8_unchecked(buffer) };
 
-        let mut graphemes = UnicodeSegmentation::graphemes(buffer, true);
+        let mut tokens: Box<dyn Iterator<Item = &str>> = match &lense {
+            Lense::Graphemes => Box::new(UnicodeSegmentation::graphemes(buffer, true)),
+            Lense::Words => Box::new(UnicodeSegmentation::split_word_bounds(buffer)),
+            Lense::Sentences => Box::new(UnicodeSegmentation::split_sentence_bounds(buffer)),
+            Lense::Lines => Box::new(buffer.lines()),
+        };
 
-        match graphemes.next() {
-            Some("\n") => {
+        match (&lense, tokens.next()) {
+            (&Lense::Graphemes, Some("\n")) => {
                 self.position += 1;
                 self.point.0 = 0;
                 self.point.1 += 1;
             }
-            Some(grapheme) => {
+            (&Lense::Graphemes, Some(grapheme)) => {
                 self.position += grapheme.len();
                 self.point.0 += grapheme.len();
             }
-            None => {}
+            (&Lense::Lines, Some(line)) => {
+                self.position += line.len() + 1;
+                self.point.0 = 0;
+                self.point.1 += 1;
+            }
+            _ => {}
         };
 
         Ok(())
     }
 
-    fn step_backward(&mut self) -> Result<(), Error> {
+    fn step_backward(&mut self, lense: Lense) -> Result<(), Error> {
         let buffer = &self.buffer[..self.position];
 
         if buffer.len() == 0 {
@@ -183,6 +219,31 @@ impl<'a> Document<'a> {
         }
 
         let buffer = unsafe { std::str::from_utf8_unchecked(buffer) };
+
+        let mut tokens: Box<dyn Iterator<Item = &str>> = match &lense {
+            Lense::Graphemes => Box::new(UnicodeSegmentation::graphemes(buffer, true)),
+            Lense::Words => Box::new(UnicodeSegmentation::split_word_bounds(buffer)),
+            Lense::Sentences => Box::new(UnicodeSegmentation::split_sentence_bounds(buffer)),
+            Lense::Lines => Box::new(UnicodeSegmentation::split_sentence_bounds(buffer)),
+        };
+
+        match (&lense, tokens.next()) {
+            (&Lense::Graphemes, Some("\n")) => {
+                self.position += 1;
+                self.point.0 = 0;
+                self.point.1 += 1;
+            }
+            (&Lense::Graphemes, Some(grapheme)) => {
+                self.position += grapheme.len();
+                self.point.0 += grapheme.len();
+            }
+            (&Lense::Lines, Some(line)) => {
+                self.position += line.len() + 1;
+                self.point.0 = 0;
+                self.point.1 += 1;
+            }
+            _ => {}
+        };
 
         let mut graphemes = UnicodeSegmentation::graphemes(buffer, true);
 
@@ -211,5 +272,54 @@ impl<'a> Document<'a> {
         };
 
         Ok(())
+    }
+}
+
+struct ULineBounds<'a> {
+    cursor: usize,
+    source: &'a str,
+}
+
+#[test]
+fn test_unicode_lines() {
+    let buffer = "Hello, world!\nHow are you?\nI'm fine.\n";
+
+    let mut lines = ULineBounds {
+        cursor: 0,
+        source: buffer,
+    };
+
+    assert_eq!(lines.next(), Some("Hello, world!"));
+    assert_eq!(lines.next(), Some("\n"));
+    assert_eq!(lines.next(), Some("How are you?"));
+    assert_eq!(lines.next(), Some("\n"));
+    assert_eq!(lines.next(), Some("I'm fine."));
+    assert_eq!(lines.next(), Some("\n"));
+    assert_eq!(lines.next(), None);
+}
+
+impl<'a> Iterator for ULineBounds<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<&'a str> {
+        let mut cursor = self.cursor;
+        let offset = self.cursor;
+
+        let mut word_bounds =
+            UnicodeSegmentation::split_word_bound_indices(dbg!(&self.source[self.cursor..]));
+
+        while let Some((index, next)) = word_bounds.next() {
+            cursor = index + offset;
+
+            if next == "\n" {
+                break;
+            }
+        }
+
+        let range = dbg!(self.cursor..cursor);
+
+        self.cursor = cursor;
+
+        self.source.get(range)
     }
 }

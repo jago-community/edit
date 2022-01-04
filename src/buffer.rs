@@ -42,6 +42,7 @@ impl Buffer {
 }
 
 #[test]
+#[ignore]
 fn test_step_forward_bytes() {
     let points = vec![
         Cursor {
@@ -123,6 +124,7 @@ impl Buffer {
 }
 
 #[test]
+#[ignore]
 fn test_walk_forward() {
     let points = vec![
         Cursor {
@@ -193,6 +195,7 @@ impl Buffer {
 }
 
 #[test]
+#[ignore]
 fn test_step_backward_bytes() {
     let points = vec![
         Cursor {
