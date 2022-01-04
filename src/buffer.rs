@@ -42,37 +42,6 @@ impl Buffer {
 }
 
 #[test]
-fn test_get_mapped_char() {
-    let mut buffer = Buffer::new(TEST_DOCUMENT);
-    for _ in 0.."# Jago".len() {
-        //let this = buffer.get_char(index).unwrap();
-        buffer.step_forward_bytes(1).unwrap();
-        assert_eq!(
-            Some((false, TEST_DOCUMENT[buffer.cursor.position - 1] as char)),
-            buffer.get_mapped_char(buffer.cursor.position - 1)
-        );
-    }
-
-    assert_eq!(
-        Some((true, TEST_DOCUMENT[buffer.cursor.position] as char)),
-        buffer.get_mapped_char(buffer.cursor.position)
-    );
-}
-
-impl Buffer {
-    pub fn get_mapped_char(&self, position: usize) -> Option<(bool, char)> {
-        self.get_char(position).and_then(|this| {
-            if this == '\n' {
-                self.get_char(self.cursor.position + 1)
-                    .map(|that| (true, that))
-            } else {
-                Some((false, this))
-            }
-        })
-    }
-}
-
-#[test]
 fn test_step_forward_bytes() {
     let points = vec![
         Cursor {
@@ -123,13 +92,6 @@ fn test_step_forward_bytes() {
 
     for point in &points[1..] {
         buffer.step_forward_bytes(1);
-        println!(
-            "got {:?} {:?} = want {:?} {:?}",
-            buffer.cursor,
-            buffer.get_char(buffer.cursor.position),
-            point,
-            buffer.get_char(point.position)
-        );
         assert_eq!(&buffer.cursor, point);
     }
 }
@@ -156,14 +118,124 @@ impl Buffer {
 
         self.cursor.position = next;
 
-        println!("{} {:?}", next, self.get_char(next));
-
         Some(count)
     }
 }
 
 #[test]
+fn test_walk_forward() {
+    let points = vec![
+        Cursor {
+            position: "# Ja".len(),
+            x: 4,
+            y: 0,
+        },
+        Cursor {
+            position: "# Jag".len(),
+            x: 5,
+            y: 0,
+        },
+        Cursor {
+            position: "# Jago
+"
+            .len(),
+            x: 0,
+            y: 1,
+        },
+        Cursor {
+            position: "# Jago
+
+"
+            .len(),
+            x: 0,
+            y: 2,
+        },
+        Cursor {
+            position: "# Jago
+
+>"
+            .len(),
+            x: 1,
+            y: 2,
+        },
+        Cursor {
+            position: "# Jago
+
+> "
+            .len(),
+            x: 2,
+            y: 2,
+        },
+    ];
+
+    let mut buffer = Buffer {
+        bytes: TEST_DOCUMENT.into(),
+        cursor: points.get(0).unwrap().clone(),
+        ..Default::default()
+    };
+
+    for point in &points[1..] {
+        buffer.walk_forward(1);
+        assert_eq!(&buffer.cursor, point);
+    }
+}
+
+impl Buffer {
+    pub fn walk_forward(&mut self, steps: usize) {
+        for _ in 0..steps {
+            self.step_forward_bytes(1).unwrap();
+        }
+
+        if self.current_char() == Some('\n') {
+            self.step_forward_bytes(1).unwrap();
+        }
+    }
+}
+
+#[test]
 fn test_step_backward_bytes() {
+    let points = vec![
+        Cursor {
+            position: "# Jago
+
+> `Canker` but communist.
+
+"
+            .len(),
+            x: 0,
+            y: 4,
+        },
+        Cursor {
+            position: "# Jago
+
+> `Canker` but communist.
+"
+            .len(),
+            x: 0,
+            y: 3,
+        },
+        Cursor {
+            position: "# Jago
+
+> `Canker` but communist."
+                .len(),
+            x: "> `Canker` but communist.".len(),
+            y: 2,
+        },
+    ];
+
+    let mut buffer = Buffer {
+        bytes: TEST_DOCUMENT.into(),
+        cursor: points.get(0).unwrap().clone(),
+        ..Default::default()
+    };
+
+    for point in &points[1..] {
+        buffer.step_backward_bytes(1);
+        println!("got {:?} = want {:?}", buffer.cursor, point);
+        assert_eq!(&buffer.cursor, point);
+    }
+
     let points = vec![
         Cursor {
             position: 10,
@@ -310,226 +382,15 @@ impl Buffer {
             }
         }
 
-        //self.step_forward_bytes(1)?;
-
         Some(count)
-
-        // let mut saw = 0;
-
-        // let dx = self.cursor.x;
-
-        // for _ in self.cursor.position..self.bytes.len() - 1 {
-        // if self.new_lines.contains(&self.cursor.position) {
-        // saw += 1;
-        // }
-
-        // self.step_forward_bytes(1)?;
-
-        // if saw == count {
-        // break;
-        // }
-        // }
-
-        //for _ in 0..dx {
-        //if self.new_lines.contains(&self.cursor.position) {
-        //break;
-        //}
-        //self.move_forward_bytes(1)?;
-        //}
-
-        //Some(count)
     }
 }
 
 impl Buffer {
     fn step_backward_lines(&mut self, count: usize) -> Option<usize> {
-        //
-
         Some(count)
     }
 }
-
-/*
-#[test]
-fn test_move_some_bytes() {
-    let input = b"# Jago
-
-> `Canker` but communist.
-
-## Intro
-
-The name Alec Thompson is one that most of us know for one reason or another. The same face might come to mind for each of us.
-
-## Canker
-
-Canker was founded by one of the Alec Thompsons.
-";
-
-    let mut buffer = Buffer::new(input);
-
-    let b = b"# Jago";
-
-    assert_eq!(0, buffer.cursor.position);
-    assert_eq!(0, buffer.cursor.x);
-    assert_eq!(0, buffer.cursor.y);
-
-    for index in 1..="# Jago".len() {
-        buffer.move_forward_bytes(1);
-        assert_eq!(index, buffer.cursor.position);
-        assert_eq!(index, buffer.cursor.x);
-        assert_eq!(0, buffer.cursor.y);
-    }
-
-    buffer.move_forward_bytes(1);
-    assert_eq!(
-        "# Jago
-"
-        .len()
-            - 1,
-        buffer.cursor.position
-    );
-    assert_eq!(0, buffer.cursor.x);
-    assert_eq!(1, buffer.cursor.y);
-
-    buffer.move_backward_bytes(1);
-    assert_eq!("# Jago".len(), buffer.cursor.position);
-    assert_eq!("# Jago".len(), buffer.cursor.x);
-    assert_eq!(0, buffer.cursor.y);
-    dbg!(&buffer.cursor);
-    buffer.move_backward_bytes(1);
-    assert_eq!("# Jag".len() - 1, buffer.cursor.position);
-    assert_eq!("# Jag".len() - 1, buffer.cursor.x);
-    assert_eq!(0, buffer.cursor.y);
-
-    /*
-        buffer.move_forward_bytes(2);
-        assert_eq!(2, buffer.new_lines.len());
-        assert_eq!(0, buffer.cursor.x);
-        assert_eq!(2, buffer.cursor.y);
-        assert_eq!("# Jago".len() + 2, buffer.cursor.position);
-
-        buffer.move_backward_bytes(1);
-        assert_eq!(2, buffer.new_lines.len());
-        assert_eq!(0, buffer.cursor.x);
-        assert_eq!(1, buffer.cursor.y);
-        assert_eq!("# Jago".len() + 1, buffer.cursor.position);
-
-        buffer.move_backward_bytes(1);
-        assert_eq!(2, buffer.new_lines.len());
-        assert_eq!("# Jago".len() - 1, buffer.cursor.x);
-        assert_eq!(0, buffer.cursor.y);
-        assert_eq!("# Jago".len(), buffer.cursor.position);
-
-        buffer.move_forward_bytes(
-            "
-
-    > `Canker` but communist.
-    "
-            .len(),
-        );
-        assert_eq!(
-            "# Jago
-
-    > `Canker` but communist.
-    "
-            .len(),
-            buffer.cursor.position
-        );
-        assert_eq!(3, buffer.cursor.y);
-        assert_eq!(0, buffer.cursor.x);
-        buffer.move_backward_bytes(1);
-        assert_eq!(
-            "# Jago
-
-    > `Canker` but communist."
-                .len(),
-            buffer.cursor.position
-        );
-        assert_eq!(2, buffer.cursor.y);
-        assert_eq!("> `Canker` but communist.".len(), buffer.cursor.x);
-        buffer.move_forward_lines(1);
-        assert_eq!(
-            "# Jago
-
-    > `Canker` but communist.
-    "
-            .len(),
-            buffer.cursor.position
-        );
-        assert_eq!(3, buffer.cursor.y);
-        assert_eq!(0, buffer.cursor.x);
-        dbg!(&buffer.cursor);
-        buffer.move_forward_lines(1);
-        dbg!(&buffer.cursor);
-        assert_eq!(
-            "# Jago
-
-    > `Canker` but communist.
-
-    "
-            .len(),
-            buffer.cursor.position
-        );
-        assert_eq!(4, buffer.cursor.y);
-        assert_eq!(0, buffer.cursor.x);*/
-    /*
-        buffer.move_forward_lines(1);
-        assert_eq!(
-            "# Jago
-    "
-            .len(),
-            buffer.cursor.position
-        );
-        assert_eq!(1, buffer.cursor.y);
-        assert_eq!(0, buffer.cursor.x);
-        buffer.move_forward_lines(1);
-        assert_eq!(
-            "# Jago
-
-    "
-            .len(),
-            buffer.cursor.position
-        );
-        assert_eq!(2, buffer.cursor.y);
-        assert_eq!(0, buffer.cursor.x);
-        buffer.move_backward_lines(1);
-        assert_eq!(
-            "# Jago
-    "
-            .len(),
-            buffer.cursor.position
-        );
-        assert_eq!(1, buffer.cursor.y);
-        assert_eq!(0, buffer.cursor.x);
-        buffer.move_backward_lines(1);
-        assert_eq!(0, buffer.cursor.position);
-        assert_eq!(0, buffer.cursor.x);
-        assert_eq!(0, buffer.cursor.y);
-        buffer.move_forward_lines(2);
-        assert_eq!(
-            "# Jago
-
-    > `Ca"
-                .len(),
-            buffer.cursor.position
-        );
-        assert_eq!(2, buffer.cursor.y);
-        assert_eq!(5, buffer.cursor.x);
-        buffer.move_backward_bytes(2);
-        assert_eq!(
-            "# Jago
-
-    > `"
-            .len(),
-            buffer.cursor.position
-        );
-        assert_eq!("> `".len(), buffer.cursor.x);
-        buffer.move_backward_lines(2);
-        assert_eq!("# Ja".len(), buffer.cursor.position);
-        assert_eq!("# Ja".len() - 1, buffer.cursor.x);
-        assert_eq!(0, buffer.cursor.y);
-        */
-}*/
 
 use crossterm::{
     cursor::{MoveTo, MoveToColumn},
@@ -564,7 +425,7 @@ impl Buffer {
                 code: KeyCode::Char('l'),
                 ..
             }) => {
-                self.step_forward_bytes(1);
+                self.walk_forward(1);
             }
             _ => {}
         };
@@ -625,7 +486,7 @@ impl Command for Buffer {
         ))
         .write_ansi(out)?;
         SetForegroundColor(Color::Blue).write_ansi(out)?;
-        MoveTo(dx as u16, dy as u16).write_ansi(out)?;
+        MoveTo(self.cursor.x as u16, self.cursor.y as u16).write_ansi(out)?;
 
         Ok(())
     }
