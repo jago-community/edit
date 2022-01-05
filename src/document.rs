@@ -42,10 +42,10 @@ impl<'a> Document<'a> {
         }
     }
 
-    pub fn current(&self) -> Option<&'a str> {
+    pub fn current(&self, lense: Lense) -> Option<&'a str> {
         let buffer = unsafe { std::str::from_utf8_unchecked(&self.buffer[self.position..]) };
 
-        let mut tokens: Box<dyn Iterator<Item = &str>> = match self.lense {
+        let mut tokens: Box<dyn Iterator<Item = &str>> = match lense {
             Lense::Graphemes => Box::new(UnicodeSegmentation::graphemes(buffer, true)),
             Lense::Words => Box::new(UnicodeSegmentation::split_word_bounds(buffer)),
             Lense::Sentences => Box::new(UnicodeSegmentation::split_sentence_bounds(buffer)),
@@ -103,7 +103,7 @@ impl<'a> Command for Document<'a> {
             "{} {:?}\n{:?}",
             self.position,
             self.point,
-            self.current()
+            self.current(Lense::Graphemes)
         ))
         .write_ansi(out)?;
 
@@ -276,31 +276,50 @@ fn test_stepping() {
 
     assert_eq!(document.position, 1);
     assert_eq!(document.point, (1, 0));
+    assert_eq!(document.current(Lense::Graphemes), Some(" "));
 
     document.step_backward(Lense::Graphemes).unwrap();
 
     assert_eq!(document.position, 0);
     assert_eq!(document.point, (0, 0));
+    assert_eq!(document.current(Lense::Graphemes), Some("#"));
 
     document.step_backward(Lense::Graphemes).unwrap();
 
     assert_eq!(document.position, 0);
     assert_eq!(document.point, (0, 0));
+    assert_eq!(document.current(Lense::Graphemes), Some("#"));
 
     document.step_forward(Lense::Lines).unwrap();
 
     assert_eq!(document.position, 6);
     assert_eq!(document.point, (0, 1));
+    assert_eq!(document.current(Lense::Graphemes), Some("\n"));
 
     document.step_backward(Lense::Lines).unwrap();
 
     assert_eq!(document.position, 0);
     assert_eq!(document.point, (0, 0));
+    assert_eq!(document.current(Lense::Graphemes), Some("#"));
 
     document.step_backward(Lense::Lines).unwrap();
 
     assert_eq!(document.position, 0);
     assert_eq!(document.point, (0, 0));
+    assert_eq!(document.current(Lense::Graphemes), Some("#"));
+
+    document.step_forward(Lense::Lines).unwrap();
+    document.step_forward(Lense::Lines).unwrap();
+
+    assert_eq!(document.position, 8);
+    assert_eq!(document.point, (0, 3));
+    assert_eq!(document.current(Lense::Graphemes), Some(">"));
+
+    document.step_forward(Lense::Graphemes).unwrap();
+
+    assert_eq!(document.position, 9);
+    assert_eq!(document.point, (1, 2));
+    assert_eq!(document.current(Lense::Graphemes), Some(" "));
 }
 
 use std::ops::Range;
