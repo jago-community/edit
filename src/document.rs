@@ -41,6 +41,20 @@ impl<'a> Document<'a> {
             point: (0, 0),
         }
     }
+
+    pub fn current(&self) -> Option<&'a str> {
+        let buffer = unsafe { std::str::from_utf8_unchecked(&self.buffer[self.position..]) };
+
+        let mut tokens: Box<dyn Iterator<Item = &str>> = match self.lense {
+            Lense::Graphemes => Box::new(UnicodeSegmentation::graphemes(buffer, true)),
+            Lense::Words => Box::new(UnicodeSegmentation::split_word_bounds(buffer)),
+            Lense::Sentences => Box::new(UnicodeSegmentation::split_sentence_bounds(buffer)),
+            //Lense::Lines => Box::new(buffer.lines()),
+            Lense::Lines => Box::new(ULineBounds::new(buffer)),
+        };
+
+        tokens.next()
+    }
 }
 
 use unicode_segmentation::UnicodeSegmentation;
@@ -63,7 +77,8 @@ impl<'a> Command for Document<'a> {
             Lense::Graphemes => Box::new(UnicodeSegmentation::graphemes(buffer, true)),
             Lense::Words => Box::new(UnicodeSegmentation::split_word_bounds(buffer)),
             Lense::Sentences => Box::new(UnicodeSegmentation::split_sentence_bounds(buffer)),
-            Lense::Lines => Box::new(buffer.lines()),
+            //Lense::Lines => Box::new(buffer.lines()),
+            Lense::Lines => Box::new(ULineBounds::new(buffer)),
         };
 
         let mut color_picker = ColorPicker::new();
@@ -85,8 +100,10 @@ impl<'a> Command for Document<'a> {
         SetForegroundColor(color_picker.pick()).write_ansi(out)?;
         MoveToColumn(0).write_ansi(out)?;
         Print(format!(
-            "\n{:?} {} {:?}",
-            self.buffer[self.position] as char, self.position, self.point
+            "{} {:?}\n{:?}",
+            self.position,
+            self.point,
+            self.current()
         ))
         .write_ansi(out)?;
 
@@ -147,7 +164,7 @@ impl<'a> Document<'a> {
                 code: KeyCode::Char('k'),
                 modifiers: _,
             }) => {
-                self.step_forward(Lense::Lines).unwrap();
+                self.step_backward(Lense::Lines).unwrap();
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Char('l'),
@@ -221,63 +238,85 @@ impl<'a> Document<'a> {
         let buffer = unsafe { std::str::from_utf8_unchecked(buffer) };
 
         let mut tokens: Box<dyn Iterator<Item = &str>> = match &lense {
-            Lense::Graphemes => Box::new(UnicodeSegmentation::graphemes(buffer, true)),
-            Lense::Words => Box::new(UnicodeSegmentation::split_word_bounds(buffer)),
+            Lense::Graphemes => Box::new(UnicodeSegmentation::graphemes(buffer, true).rev()),
+            Lense::Words => Box::new(UnicodeSegmentation::split_word_bounds(buffer).rev()),
             Lense::Sentences => Box::new(UnicodeSegmentation::split_sentence_bounds(buffer)),
-            Lense::Lines => Box::new(UnicodeSegmentation::split_sentence_bounds(buffer)),
+            Lense::Lines => Box::new(ULineBounds::new(buffer).rev()),
         };
 
         match (&lense, tokens.next()) {
             (&Lense::Graphemes, Some("\n")) => {
-                self.position += 1;
+                self.position -= 1;
                 self.point.0 = 0;
-                self.point.1 += 1;
+                self.point.1 -= 1;
             }
             (&Lense::Graphemes, Some(grapheme)) => {
-                self.position += grapheme.len();
-                self.point.0 += grapheme.len();
-            }
-            (&Lense::Lines, Some(line)) => {
-                self.position += line.len() + 1;
-                self.point.0 = 0;
-                self.point.1 += 1;
-            }
-            _ => {}
-        };
-
-        let mut graphemes = UnicodeSegmentation::graphemes(buffer, true);
-
-        match graphemes.next_back() {
-            Some("\n") => {
-                self.position -= 1;
-                self.point.1 -= 1;
-
-                let mut from_previous_line = 0;
-
-                while let Some(previous_grapheme) = graphemes.next_back() {
-                    if previous_grapheme == "\n" {
-                        break;
-                    }
-
-                    from_previous_line += previous_grapheme.len();
-                }
-
-                self.point.0 = from_previous_line;
-            }
-            Some(grapheme) => {
                 self.position -= grapheme.len();
                 self.point.0 -= grapheme.len();
             }
-            None => {}
+            (&Lense::Lines, Some(line)) if self.point.1 > 0 => {
+                self.position -= line.len();
+                self.point.0 = 0;
+                self.point.1 -= 1;
+            }
+            _ => {}
         };
 
         Ok(())
     }
 }
 
+#[test]
+fn test_stepping() {
+    let bytes = include_bytes!("../edit");
+
+    let mut document = Document::new(bytes);
+
+    document.step_forward(Lense::Graphemes).unwrap();
+
+    assert_eq!(document.position, 1);
+    assert_eq!(document.point, (1, 0));
+
+    document.step_backward(Lense::Graphemes).unwrap();
+
+    assert_eq!(document.position, 0);
+    assert_eq!(document.point, (0, 0));
+
+    document.step_backward(Lense::Graphemes).unwrap();
+
+    assert_eq!(document.position, 0);
+    assert_eq!(document.point, (0, 0));
+
+    document.step_forward(Lense::Lines).unwrap();
+
+    assert_eq!(document.position, 6);
+    assert_eq!(document.point, (0, 1));
+
+    document.step_backward(Lense::Lines).unwrap();
+
+    assert_eq!(document.position, 0);
+    assert_eq!(document.point, (0, 0));
+
+    document.step_backward(Lense::Lines).unwrap();
+
+    assert_eq!(document.position, 0);
+    assert_eq!(document.point, (0, 0));
+}
+
+use std::ops::Range;
+
 struct ULineBounds<'a> {
-    cursor: usize,
+    span: Range<usize>,
     source: &'a str,
+}
+
+impl<'a> ULineBounds<'a> {
+    fn new(source: &'a str) -> Self {
+        Self {
+            span: 0..source.len(),
+            source,
+        }
+    }
 }
 
 #[test]
@@ -285,7 +324,7 @@ fn test_unicode_lines() {
     let buffer = "Hello, world!\nHow are you?\nI'm fine.\n";
 
     let mut lines = ULineBounds {
-        cursor: 0,
+        span: 0..buffer.len(),
         source: buffer,
     };
 
@@ -302,24 +341,74 @@ impl<'a> Iterator for ULineBounds<'a> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<&'a str> {
-        let mut cursor = self.cursor;
-        let offset = self.cursor;
+        let buffer = &self.source[self.span.clone()];
 
-        let mut word_bounds =
-            UnicodeSegmentation::split_word_bound_indices(dbg!(&self.source[self.cursor..]));
+        let mut word_bounds = UnicodeSegmentation::split_word_bound_indices(buffer);
 
-        while let Some((index, next)) = word_bounds.next() {
-            cursor = index + offset;
+        let index = word_bounds
+            .find(|(_, next)| *next == "\n")
+            .map(|(index, _)| index)
+            .or(Some(self.source.len()))?;
 
-            if next == "\n" {
-                break;
-            }
-        }
+        let next_new_line = self.span.start + index;
 
-        let range = dbg!(self.cursor..cursor);
+        let range = self.span.start..next_new_line;
 
-        self.cursor = cursor;
+        let range = if range.is_empty() {
+            range.start..range.end + 1
+        } else {
+            range
+        };
+
+        self.span.start = range.end;
 
         self.source.get(range)
+    }
+}
+
+#[test]
+fn test_unicode_lines_backward() {
+    let buffer = "Hello, world!\nHow are you?\nI'm fine.\n";
+
+    let mut lines = ULineBounds {
+        span: 0..buffer.len(),
+        source: buffer,
+    };
+
+    assert_eq!(lines.next_back(), Some("\n"));
+    assert_eq!(lines.next_back(), Some("I'm fine."));
+    assert_eq!(lines.next_back(), Some("\n"));
+    assert_eq!(lines.next_back(), Some("How are you?"));
+    assert_eq!(lines.next_back(), Some("\n"));
+    assert_eq!(lines.next_back(), Some("Hello, world!"));
+    assert_eq!(lines.next_back(), None);
+}
+
+impl<'a> DoubleEndedIterator for ULineBounds<'a> {
+    fn next_back(&mut self) -> Option<&'a str> {
+        let buffer = &self.source[self.span.clone()];
+
+        let mut word_bounds = UnicodeSegmentation::split_word_bound_indices(buffer);
+
+        let index = word_bounds
+            .rfind(|(_, next)| *next == "\n")
+            .map(|(index, _)| index + 1)
+            .or(Some(0))?;
+
+        let range = index..self.span.end;
+
+        if range.start == 0 && range.end == 0 {
+            return None;
+        }
+
+        let range = if range.is_empty() {
+            range.start - 1..range.end
+        } else {
+            range
+        };
+
+        self.span.end = range.start;
+
+        self.source.get(dbg!(range))
     }
 }
