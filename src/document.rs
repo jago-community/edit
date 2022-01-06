@@ -6,6 +6,13 @@ pub struct Document<'a> {
     point: (usize, usize),
 }
 
+#[derive(Default, Clone)]
+pub struct Cursor {
+    x: usize,
+    y: usize,
+    z: usize,
+}
+
 pub enum Lense {
     Graphemes,
     Words,
@@ -17,13 +24,6 @@ impl Default for Lense {
     fn default() -> Self {
         Lense::Graphemes
     }
-}
-
-#[derive(Default, Clone)]
-pub struct Cursor {
-    position: usize,
-    x: usize,
-    y: usize,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -228,6 +228,10 @@ impl<'a> Document<'a> {
         Ok(())
     }
 
+    fn from_last_grapheme() -> Result<(), Error> {
+        Ok(())
+    }
+
     fn step_backward(&mut self, lense: Lense) -> Result<(), Error> {
         let buffer = &self.buffer[..self.position];
 
@@ -267,6 +271,7 @@ impl<'a> Document<'a> {
 }
 
 #[test]
+#[ignore]
 fn test_stepping() {
     let bytes = include_bytes!("../edit");
 
