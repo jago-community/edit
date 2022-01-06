@@ -12,7 +12,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-use crate::document::Document;
+use crate::buffer::Buffer;
 
 pub fn handle(_: &mut Peekable<impl Iterator<Item = String>>) -> Result<(), Error> {
     let mut source = vec![];
@@ -28,7 +28,7 @@ pub fn handle(_: &mut Peekable<impl Iterator<Item = String>>) -> Result<(), Erro
 
     file.read_to_end(&mut source)?;
 
-    let mut document = Document::new(&source);
+    let mut buffer = Buffer::new(unsafe { std::str::from_utf8_unchecked(&source) });
 
     let mut output = stdout();
 
@@ -36,7 +36,7 @@ pub fn handle(_: &mut Peekable<impl Iterator<Item = String>>) -> Result<(), Erro
         output,
         EnterAlternateScreen,
         SetCursorShape(CursorShape::UnderScore),
-        &document,
+        &buffer,
     )?;
 
     enable_raw_mode()?;
@@ -46,13 +46,13 @@ pub fn handle(_: &mut Peekable<impl Iterator<Item = String>>) -> Result<(), Erro
 
         let position = crossterm::cursor::position()?;
 
-        execute!(output, &document)?;
+        execute!(output, &buffer)?;
 
         enable_raw_mode()?;
 
         let event = read()?;
 
-        document.handle(&event);
+        buffer.handle(&event);
 
         match event {
             Event::Key(KeyEvent {
@@ -64,7 +64,7 @@ pub fn handle(_: &mut Peekable<impl Iterator<Item = String>>) -> Result<(), Erro
             _ => {}
         };
 
-        queue!(output, &document)?;
+        queue!(output, &buffer)?;
 
         output.flush()?;
     }

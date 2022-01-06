@@ -1,8 +1,16 @@
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct Cursor(usize, usize, usize);
 
 impl Cursor {
-    fn z(&self) -> usize {
+    pub fn x(&self) -> usize {
+        self.0
+    }
+
+    pub fn y(&self) -> usize {
+        self.1
+    }
+
+    pub fn z(&self) -> usize {
         self.2
     }
 }
@@ -16,51 +24,7 @@ impl From<(usize, usize, usize)> for Cursor {
 use unicode_segmentation::UnicodeSegmentation;
 
 impl Cursor {
-    fn forward(&mut self, buffer: &str, x: usize, y: usize) {
-        let mut words = UnicodeSegmentation::split_word_bound_indices(&buffer[self.z()..]);
-
-        let mut dz = 0;
-        let mut dy = 0;
-
-        for _ in 0..y {
-            if let Some((index, next)) = words.find(|(_, this)| *this == "\n") {
-                dz = index + next.len();
-                dy += next.len();
-            } else {
-                break;
-            }
-
-            if dy == y {
-                break;
-            }
-        }
-
-        let mut graphemes = UnicodeSegmentation::grapheme_indices(&buffer[self.z() + dz..], true);
-
-        let mut dx = 0;
-
-        dbg!((dx, dy, dz));
-
-        for fx in 0..self.0 + x {
-            match graphemes.next() {
-                Some((_, "\n")) => break,
-                Some((_, next)) => {
-                    dz += next.len();
-
-                    if fx >= self.0 {
-                        dx += next.len();
-                    }
-                }
-                _ => break,
-            };
-        }
-
-        self.0 += dx;
-        self.1 += dy;
-        self.2 += dz;
-    }
-
-    fn current<'a>(&self, buffer: &'a str) -> &'a str {
+    pub fn current<'a>(&self, buffer: &'a str) -> &'a str {
         let mut buffer = UnicodeSegmentation::graphemes(&buffer[self.z()..], true);
 
         match buffer.next() {
@@ -70,99 +34,179 @@ impl Cursor {
     }
 }
 
-#[test]
-fn forward() {
-    let buffer = include_str!("../edit");
-
-    macro_rules! assert_cursor {
-        ($got:expr,  $want:expr, $slice:expr) => {
-            let current = $got.current(buffer);
-            assert_eq!($got, $want.into(), "got {:?} want {:?}", $got, $want);
-            assert_eq!(current, $slice, "got {:?} want {:?}", current, $slice);
-        };
-    }
-
-    let mut cursor: Cursor = (0, 0, 0).into();
-
-    assert_cursor!(cursor, (0, 0, 0), "#");
-
-    cursor.forward(buffer, 1, 0);
-
-    assert_cursor!(cursor, (1, 0, 1), " ");
-
-    cursor.forward(buffer, 2, 2);
-
-    assert_cursor!(cursor, (3, 2, 11), "C");
-}
-
 impl Cursor {
-    fn seek(&mut self, buffer: &str, (x, y): (usize, usize)) {
-        let mut words = UnicodeSegmentation::split_word_bound_indices(&buffer[self.z()..]);
+    pub fn forward_graphemes(&self, input: &str, count: usize) -> Self {
+        let offset = self.z();
 
-        let mut dz = 0;
-        let mut dy = 0;
+        let buffer = &input[offset..];
 
-        for _ in self.1..y {
-            if let Some((index, next)) = words.find(|(_, this)| *this == "\n") {
-                dz = index + next.len();
-                dy += next.len();
-            } else {
-                break;
-            }
+        let (mut dx, mut dy, mut dz) = (self.x(), 0, 0);
 
-            if dy == y {
-                break;
-            }
-        }
+        let mut graphemes = UnicodeSegmentation::graphemes(buffer, true);
 
-        let mut graphemes = UnicodeSegmentation::grapheme_indices(&buffer[self.z() + dz..], true);
-
-        let mut dx = 0;
-
-        dbg!((dx, dy, dz));
-
-        for _ in 0..x {
+        for _ in 0..count {
             match graphemes.next() {
-                Some((_, "\n")) => break,
-                Some((_, next)) => {
-                    dz += next.len();
-                    dx += next.len();
+                Some("\n") => {
+                    dz += "\n".len();
+                    dy += 1;
+                    dx = 0;
                 }
-                _ => break,
+                Some(grapheme) => {
+                    dz += grapheme.len();
+                    dx += grapheme.len();
+                }
+                None => {
+                    break;
+                }
             };
         }
 
-        self.0 = dx;
-        self.1 = dy;
-        self.2 = dz;
+        let mut next = Cursor::from((dx, self.y() + dy, self.z() + dz));
+
+        if "\n" == next.current(&input) {
+            match graphemes.next() {
+                Some(grapheme) => {
+                    next.2 += grapheme.len();
+                    next.1 += 1;
+                    next.0 = 0;
+                }
+                None => {}
+            };
+        }
+
+        next
     }
 }
 
 #[test]
-fn seek() {
+fn forward_graphemes() {
     let buffer = include_str!("../edit");
 
-    macro_rules! assert_cursor {
-        ($got:expr,  $want:expr, $slice:expr) => {
-            let current = $got.current(buffer);
-            assert_eq!($got, $want.into(), "got {:?} want {:?}", $got, $want);
-            assert_eq!(current, $slice, "got {:?} want {:?}", current, $slice);
+    macro_rules! assert_ {
+        ($from:expr, $steps:expr,  $to:expr, $want:expr) => {
+            let from: Cursor = $from.into();
+            let to = from.forward_graphemes(buffer, $steps);
+            let got = to.current(buffer);
+            assert_eq!(
+                to,
+                $to.into(),
+                "{:?} -> {} = got {:?} want {:?} {:?}",
+                $from,
+                $steps,
+                to,
+                $to,
+                got
+            );
+            assert_eq!(
+                got, $want,
+                "{:?} -> {} = got {:?} want {:?}",
+                $from, $steps, got, $want
+            );
         };
     }
 
-    let mut cursor: Cursor = (0, 0, 0).into();
+    let tests = vec![
+        ((0, 0, 0), 1, (1, 0, 1), " "),
+        ((1, 0, 1), 1, (2, 0, 2), "J"),
+        ((2, 0, 2), 1, (3, 0, 3), "a"),
+        ((3, 0, 3), 1, (4, 0, 4), "g"),
+        ((4, 0, 4), 1, (5, 0, 5), "o"),
+        ((5, 0, 5), 1, (0, 1, 7), "\n"),
+        ((0, 0, 0), 1, (1, 0, 1), " "),
+        ((1, 0, 1), 2, (3, 0, 3), "a"),
+        ((3, 0, 3), 3, (0, 1, 7), "\n"),
+        ((0, 1, 7), 4, (3, 2, 11), "C"),
+        ((3, 2, 10), 5, (8, 2, 15), "e"),
+    ];
 
-    assert_cursor!(cursor, (0, 0, 0), "#");
+    for (from, steps, to, want) in tests {
+        assert_!(from, steps, to, want);
+    }
+}
 
-    cursor.seek(buffer, (1, 0));
+use crate::unicode::split_line_bounds;
 
-    assert_cursor!(cursor, (1, 0, 1), " ");
+impl Cursor {
+    pub fn forward_lines(&self, buffer: &str, count: usize) -> Self {
+        let mut line_bounds = split_line_bounds(&buffer[self.z()..]).peekable();
 
-    cursor.seek(buffer, (3, 2));
+        let (mut dx, mut dy, mut dz) = (0, self.y(), self.z());
 
-    assert_cursor!(cursor, (3, 2, 11), "C");
+        for _ in 0..count {
+            if let Some(block) = line_bounds.next() {
+                dz += block.len();
+                dy += 1;
+                dx = 0;
 
-    cursor.seek(buffer, (1, 4));
+                match line_bounds.peek() {
+                    Some(&"\n") => {
+                        dz += "\n".len();
+                        drop(line_bounds.next());
+                    }
+                    None => break,
+                    _ => {}
+                }
+            } else {
+                break;
+            }
+        }
 
-    assert_cursor!(cursor, (1, 4, 37), "#");
+        let next = Cursor::from((dx, dy, dz));
+
+        let mut graphemes = UnicodeSegmentation::graphemes(&buffer[next.z()..], true).peekable();
+
+        for _ in 0..self.x() {
+            match graphemes.peek() {
+                Some(&"\n") => {
+                    break;
+                }
+                Some(grapheme) => {
+                    dz += grapheme.len();
+                    dx += grapheme.len();
+                    drop(line_bounds.next());
+                }
+                None => break,
+            };
+        }
+
+        (dx, dy, dz).into()
+    }
+}
+
+#[test]
+fn test_forward_lines() {
+    let buffer = include_str!("../edit");
+
+    macro_rules! assert_ {
+        ($from:expr, $steps:expr,  $to:expr, $want:expr) => {
+            let from: Cursor = $from.into();
+            let to = from.forward_lines(buffer, $steps);
+            let got = to.current(buffer);
+            assert_eq!(
+                to,
+                $to.into(),
+                "{:?} -> {} = got {:?} want {:?}",
+                $from,
+                $steps,
+                to,
+                $to
+            );
+            assert_eq!(
+                got, $want,
+                "{:?} -> {} = got {:?} want {:?}",
+                $from, $steps, got, $want
+            );
+        };
+    }
+
+    let tests = vec![
+        ((0, 0, 0), 1, (0, 1, 7), "\n"),
+        ((0, 0, 0), 2, (0, 2, 8), ">"),
+        ((3, 0, 0), 1, (0, 1, 7), "\n"),
+        ((3, 0, 0), 2, (3, 2, 11), "C"),
+    ];
+
+    for (from, steps, to, want) in tests {
+        assert_!(from, steps, to, want);
+    }
 }
