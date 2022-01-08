@@ -46,7 +46,9 @@ impl Buffer {
                 code: KeyCode::Char('h'),
                 modifiers: _,
             }) => {
-                //self.step_backward(Lense::Graphemes).unwrap();
+                self.cursor = self
+                    .cursor
+                    .backward_graphemes(&self.source, self.scale() as usize);
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Char('j'),
